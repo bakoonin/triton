@@ -1,7 +1,13 @@
 { stdenv
 , fetchurl
+
+, threads ? true
 }:
 
+let
+  inherit (stdenv.lib)
+    optionals;
+in
 stdenv.mkDerivation rec {
   name = "xz-5.2.3";
 
@@ -16,9 +22,15 @@ stdenv.mkDerivation rec {
     unset CONFIG_SHELL
   '';
 
+  configureFlags = optionals (!threads) [
+    "--enable-threads=no"
+  ];
+
   postInstall = ''
     rm -rf $out/share/doc
   '';
+
+  setupHook = ./setup-hook.sh;
 
   disableStatic = false;
 

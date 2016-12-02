@@ -2,7 +2,7 @@
 , fetchTritonPatch
 , fetchurl
 
-, enableThreading ? true
+, threads ? true
 }:
 
 let
@@ -27,6 +27,8 @@ stdenv.mkDerivation rec {
     sha256 = "fe8208133e73e47afc3251c08d2c21c5a60160165a8ab8b669c43a420e4ec680";
   };
 
+  NIX_DEBUG = true;
+
   setupHook = ./setup-hook.sh;
 
   patches = [
@@ -49,30 +51,31 @@ stdenv.mkDerivation rec {
     "-Uinstallusrbinperl"
     "-Dinstallstyle=lib/perl5"
     "-Duseshrplib"
-    "-Dlocincpth=${libc}/include"
-    "-Dloclibpth=${libc}/lib"
-  ] ++ optional enableThreading "-Dusethreads";
+    "-Dlocincpth=${stdenv.cc.cc.libc}/include"
+    "-Dloclibpth=${stdenv.cc.cc.libc}/lib"
+  ] ++ optional threads "-Dusethreads";
 
   configureScript = "${stdenv.shell} ./Configure";
 
   postPatch = ''
-    pwd="$(type -P pwd)"
-    substituteInPlace dist/PathTools/Cwd.pm \
-      --replace "pwd_cmd = 'pwd'" "pwd_cmd = '$pwd'"
+    sed \
+      -e "s,pwd_cmd = 'pwd',pwd_cmd = '$(type -tP pwd)',g" \
+      -e "s,'/bin/pwd','$(type -tP pwd)',g" \
+      -i dist/PathTools/Cwd.pm
   '';
 
   preConfigure = ''
-    configureFlags="$configureFlags -Dprefix=$out -Dman1dir=$out/share/man/man1 -Dman3dir=$out/share/man/man3"
-  '' + optionalString (!enableThreading)
+    configureFlagsArray+=(
+      "-Dprefix=$out"
+      "-Dman1dir=$out/share/man/man1"
+      "-Dman3dir=$out/share/man/man3"
+    )
+    env
+  '' + optionalString (!threads)
   /* We need to do this because the bootstrap doesn't have a
      static libpthread */ ''
     sed -i 's,\(libswanted.*\)pthread,\1,g' Configure
   '';
-
-  preBuild = optionalString (!(stdenv ? cc && stdenv.cc.nativeTools))
-    /* Make Cwd work on NixOS (where we don't have a /bin/pwd). */ ''
-      substituteInPlace dist/PathTools/Cwd.pm --replace "'/bin/pwd'" "'$(type -tP pwd)'"
-    '';
 
   # Inspired by nuke-references, which I can't depend on because it uses perl. Perhaps it should just use sed :)
   postInstall = ''
@@ -123,7 +126,9 @@ stdenv.mkDerivation rec {
       artistic1
       gpl1Plus
     ];
-    maintainers = with maintainers; [ ];
+    maintainers = with maintainers; [
+      wkennington
+    ];
     platforms = with platforms;
       i686-linux
       ++ x86_64-linux;
